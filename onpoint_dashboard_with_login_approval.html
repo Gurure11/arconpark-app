@@ -121,13 +121,23 @@
 
   <div id="authOverlay" class="auth-overlay">
     <div class="auth-card">
-      <h2>Dashboard login</h2>
-      <p>Sign in with your dashboard username and password.</p>
-      <div class="auth-grid">
+      <h2 id="authTitle">Dashboard login</h2>
+      <p id="authSubtitle">Sign in with your dashboard username and password.</p>
+      <div class="auth-grid" id="loginFields">
         <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="Enter username"></div>
         <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter password"></div>
       </div>
+      <div class="auth-grid hidden-by-role" id="registerFields" style="display:none">
+        <div class="field"><label>Full Name</label><input id="registerFullName" placeholder="Enter full name"></div>
+        <div class="field"><label>Email</label><input id="registerEmail" type="email" autocomplete="email" placeholder="Enter email"></div>
+        <div class="field"><label>Username</label><input id="registerUsername" autocomplete="username" placeholder="Choose username"></div>
+        <div class="field"><label>Password</label><input id="registerPassword" type="password" autocomplete="new-password" placeholder="Create password"></div>
+        <div class="field"><label>Confirm Password</label><input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="Confirm password"></div>
+        <div class="field"><label>Role</label><select id="registerRole"><option>User</option><option>Safety Manager</option><option>Admin Manager</option></select></div>
+      </div>
       <div class="auth-actions">
+        <button id="authToggleBtn" type="button" class="secondary">New user registration</button>
+        <button id="registerBtn" type="button" style="display:none">Register</button>
         <button id="loginBtn" type="button">Login</button>
       </div>
       <div id="loginMessage" class="login-meta">Roles supported: Admin Manager, User, Safety Manager.</div>
@@ -362,8 +372,8 @@
   </div>
 
 <script>
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby77WRkVoNoFSQ7WU5FcuzF7X2cywF1SJBVmBhMSebhSmZ4-pTfxzcvQCXwUADA9yGyVw/exec';
-const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycby77WRkVoNoFSQ7WU5FcuzF7X2cywF1SJBVmBhMSebhSmZ4-pTfxzcvQCXwUADA9yGyVw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzu4FrACwfoe2inHzdzYgvfwNxAD33_Q76q7CjtuLNdGQ9wIw81oBnsSTzQtr2eX5DyCQ/exec';
+const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbzu4FrACwfoe2inHzdzYgvfwNxAD33_Q76q7CjtuLNdGQ9wIw81oBnsSTzQtr2eX5DyCQ/exec';
 const PERIODS = ['Daily','Weekly','Monthly','Quarterly','Yearly'];
 const EXECUTIVE_AVG_GROSS_MARGIN_PCT = 31.66;
 const EXECUTIVE_PIE_COLORS = ['#0f172a','#1d4ed8','#15803d','#b45309','#b91c1c','#7c3aed','#0891b2','#ea580c','#16a34a','#be185d'];
@@ -384,6 +394,7 @@ const GROUP_FIXED_MONTHLY_STRAIGHTLINE = 39556824;
 const LOGIN_SHEET_ID = '1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE';
 const LOGIN_SHEET_TAB = 'login';
 const AUTH_STORAGE_KEY = 'onpoint_dashboard_auth_v1';
+const AUTH_MODE_STORAGE_KEY = 'onpoint_dashboard_auth_mode_v1';
 const LOCAL_APPROVALS_KEY = 'onpoint_dashboard_local_approvals_v1';
 const LOCAL_SAFETY_REVIEWS_KEY = 'onpoint_dashboard_local_safety_reviews_v1';
 const state = { projects:[], revenue:[], invoices:[], payments:[], managerBudgets:[], orders:[], straightline:[], loginUsers:[], auth:null, filters:{ period:'Monthly', division:'All', manager:'All', project:'All', search:'' } }; let charts = {};
@@ -2014,6 +2025,24 @@ function restoreAuth(){
 }
 function persistAuth(){ if (state.auth) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state.auth)); }
 function clearAuth(){ state.auth = null; localStorage.removeItem(AUTH_STORAGE_KEY); }
+function currentAuthMode(){ return localStorage.getItem(AUTH_MODE_STORAGE_KEY) === 'register' ? 'register' : 'login'; }
+function setAuthMode(mode){
+  const next = mode === 'register' ? 'register' : 'login';
+  localStorage.setItem(AUTH_MODE_STORAGE_KEY, next);
+  const isRegister = next === 'register';
+  if ($('authTitle')) $('authTitle').textContent = isRegister ? 'New user registration' : 'Dashboard login';
+  if ($('authSubtitle')) $('authSubtitle').textContent = isRegister ? 'Create your dashboard account. The details will be saved to the login sheet.' : 'Sign in with your dashboard username and password.';
+  if ($('loginFields')) $('loginFields').style.display = isRegister ? 'none' : 'grid';
+  if ($('registerFields')) $('registerFields').style.display = isRegister ? 'grid' : 'none';
+  if ($('loginBtn')) $('loginBtn').style.display = isRegister ? 'none' : '';
+  if ($('registerBtn')) $('registerBtn').style.display = isRegister ? '' : 'none';
+  if ($('authToggleBtn')) $('authToggleBtn').textContent = isRegister ? 'Back to login' : 'New user registration';
+  if ($('loginMessage') && !text($('loginMessage').textContent)) $('loginMessage').textContent = 'Roles supported: Admin Manager, User, Safety Manager.';
+}
+function clearRegisterForm(){
+  ['registerFullName','registerEmail','registerUsername','registerPassword','registerPasswordConfirm'].forEach(id => { if ($(id)) $(id).value = ''; });
+  if ($('registerRole')) $('registerRole').value = 'User';
+}
 function updateUserBar(){
   if ($('currentUserName')) $('currentUserName').textContent = currentUserDisplayName() || 'Not signed in';
   if ($('currentUserRole')) $('currentUserRole').textContent = state.auth ? currentUserRole() : 'Guest';
@@ -2043,7 +2072,7 @@ async function attemptLogin(){
   const message = $('loginMessage');
   if (!username || !password) { if (message) message.textContent = 'Enter username and password.'; return; }
   try {
-    if (!state.loginUsers.length) state.loginUsers = await fetchLoginUsersFromSheet();
+    state.loginUsers = await fetchLoginUsersFromSheet();
     const match = state.loginUsers.find(u => lower(u.Username) === lower(username) && text(u.Password) === password);
     if (!match) throw new Error('Invalid username or password');
     state.auth = match; persistAuth(); updateUserBar(); applyRoleVisibility(); renderAll();
@@ -2052,6 +2081,57 @@ async function attemptLogin(){
   } catch (e) {
     if (message) message.textContent = e.message;
     showToast(`Login failed: ${e.message}`,'error');
+  }
+}
+async function registerNewUser(){
+  const fullName = text($('registerFullName')?.value);
+  const email = text($('registerEmail')?.value);
+  const username = text($('registerUsername')?.value);
+  const password = text($('registerPassword')?.value);
+  const confirmPassword = text($('registerPasswordConfirm')?.value);
+  const role = roleName($('registerRole')?.value || 'User');
+  const message = $('loginMessage');
+  if (!fullName || !email || !username || !password || !confirmPassword) {
+    if (message) message.textContent = 'Complete all registration fields.';
+    return;
+  }
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    if (message) message.textContent = 'Enter a valid email address.';
+    return;
+  }
+  if (password !== confirmPassword) {
+    if (message) message.textContent = 'Passwords do not match.';
+    return;
+  }
+  if (password.length < 4) {
+    if (message) message.textContent = 'Password must be at least 4 characters.';
+    return;
+  }
+  try {
+    state.loginUsers = await fetchLoginUsersFromSheet();
+    if (state.loginUsers.some(u => lower(u.Username) === lower(username))) throw new Error('Username already exists.');
+    if (state.loginUsers.some(u => lower(u.Email) === lower(email))) throw new Error('Email address already exists.');
+    const payload = {
+      action:'registerUser',
+      fullName,
+      email,
+      username,
+      password,
+      role,
+      status:'Active',
+      createdAt:new Date().toISOString()
+    };
+    const res = await postAction(payload);
+    state.loginUsers = await fetchLoginUsersFromSheet();
+    clearRegisterForm();
+    setAuthMode('login');
+    if ($('loginUsername')) $('loginUsername').value = username;
+    if ($('loginPassword')) $('loginPassword').value = password;
+    if (message) message.textContent = res.message || 'Registration successful. You can log in now.';
+    showToast(res.message || 'Registration successful.','success');
+  } catch (e) {
+    if (message) message.textContent = e.message;
+    showToast(`Registration failed: ${e.message}`,'error');
   }
 }
 function logoutUser(){ clearAuth(); updateUserBar(); applyRoleVisibility(); renderAll(); showToast('Logged out.','info'); }
@@ -2639,7 +2719,7 @@ function wireFilters(){ $('periodFilter').onchange = e => { state.filters.period
 function monthlyStraightlineForRevenue(costCenter, manager, projectName, dateValue){ return monthlyStraightlineBudgetFor(costCenter, manager, projectName); }
 function updateDashboardClock(){ const el = $('dashboardClockTime'); if (!el) return; const now = new Date(); el.textContent = now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
 function startDashboardClock(){ updateDashboardClock(); if (window.dashboardClockTimer) clearInterval(window.dashboardClockTimer); window.dashboardClockTimer = setInterval(updateDashboardClock, 1000); }
-function init(){ restoreAuth(); bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('logoutBtn').onclick = () => logoutUser(); $('loginBtn').onclick = () => attemptLogin(); $('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); }); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; updateUserBar(); applyRoleVisibility(); loadData(); }
+function init(){ restoreAuth(); bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('logoutBtn').onclick = () => logoutUser(); $('loginBtn').onclick = () => attemptLogin(); if ($('registerBtn')) $('registerBtn').onclick = () => registerNewUser(); if ($('authToggleBtn')) $('authToggleBtn').onclick = () => setAuthMode(currentAuthMode()==='login' ? 'register' : 'login'); $('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); }); if ($('registerPasswordConfirm')) $('registerPasswordConfirm').addEventListener('keydown', e => { if (e.key==='Enter') registerNewUser(); }); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; updateUserBar(); setAuthMode(currentAuthMode()); applyRoleVisibility(); loadData(); }
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
