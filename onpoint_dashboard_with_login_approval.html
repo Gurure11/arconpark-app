@@ -362,8 +362,8 @@
   </div>
 
 <script>
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLAC92PNNalgfpKJMET7MAmN66fcClSnohMF1TNKfpc7LT0yesRzFOWJ0i6g1Q35-r7A/exec';
-const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbwLAC92PNNalgfpKJMET7MAmN66fcClSnohMF1TNKfpc7LT0yesRzFOWJ0i6g1Q35-r7A/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby77WRkVoNoFSQ7WU5FcuzF7X2cywF1SJBVmBhMSebhSmZ4-pTfxzcvQCXwUADA9yGyVw/exec';
+const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycby77WRkVoNoFSQ7WU5FcuzF7X2cywF1SJBVmBhMSebhSmZ4-pTfxzcvQCXwUADA9yGyVw/exec';
 const PERIODS = ['Daily','Weekly','Monthly','Quarterly','Yearly'];
 const EXECUTIVE_AVG_GROSS_MARGIN_PCT = 31.66;
 const EXECUTIVE_PIE_COLORS = ['#0f172a','#1d4ed8','#15803d','#b45309','#b91c1c','#7c3aed','#0891b2','#ea580c','#16a34a','#be185d'];
@@ -2230,8 +2230,8 @@ async function saveRevenue(){
   const manager = $('revManager').value;
   const costCenter = $('revCostCenter').value;
   const projectName = $('revProjectName').value;
-  const monthlyProjectedBudget = num($('revBudget').value) || monthlyProjectedBudgetFor(costCenter, manager, projectName);
-  const dailyProjectedBudget = num($('revDailyBudget').value) || +(monthlyProjectedBudget / PROJECTED_WORK_DAYS_PER_MONTH).toFixed(2);
+  const monthlyProjectedBudget = monthlyProjectedBudgetFor(costCenter, manager, projectName) || num($('revBudget').value);
+  const dailyProjectedBudget = monthlyProjectedBudget ? +(monthlyProjectedBudget / PROJECTED_WORK_DAYS_PER_MONTH).toFixed(2) : num($('revDailyBudget').value);
   const dailyRevenue = num($('revAmount').value);
   const monthlyStraightlineBudget = monthlyStraightlineForRevenue(costCenter, manager, projectName, date);
   const dailyStraightlineBudget = monthlyStraightlineBudget ? +(monthlyStraightlineBudget / 20).toFixed(2) : 0;
@@ -2403,6 +2403,7 @@ ${e.message}`);
   }
 }
 
+
 function filterMatchProject(projectName){
   return state.filters.project === 'All' || text(projectName) === state.filters.project;
 }
@@ -2412,6 +2413,25 @@ function managerNameAlias(value){
 function managerNamesMatch(a, b){
   if (!text(a) || !text(b)) return false;
   return managerNameAlias(a) === managerNameAlias(b);
+}
+function budgetMetricHeaderCandidates(managerName, metric){
+  const name = text(managerName);
+  if (!name) return [];
+  const base = [
+    `${name} ${metric}`,
+    `${metric} ${name}`,
+    `${name} Budget ${metric}`,
+    `${name} ${metric} Budget`,
+    `${name} ${metric} Total`,
+    `${metric} Budget ${name}`,
+    `${metric} Total ${name}`
+  ];
+  if (metric === 'Projected') {
+    base.push(`${name} Projected Budget`, `${name} Projection`, `Projected ${name}`);
+  } else {
+    base.push(`${name} Straightline`, `${name} Straight-line`, `${name} SL`, `Straightline ${name}`, `Straight-line ${name}`);
+  }
+  return [...new Set(base.map(v => text(v)).filter(Boolean))];
 }
 function currentBudgetMonthLabel(refDate = new Date()){
   return refDate.toLocaleDateString('en-ZA',{ month:'long', year:'numeric' });
@@ -2436,11 +2456,18 @@ function isBudgetRowInCurrentMonth(row, refDate = new Date()){
   const currentToken = `${refDate.getFullYear()}-${String(refDate.getMonth()+1).padStart(2,'0')}`;
   return token === currentToken;
 }
-function budgetManagerColumnValue(row, managerName){
+function budgetManagerMetricValue(row, managerName, metric){
   const target = managerNameAlias(managerName);
   if (!target) return 0;
+  const candidates = budgetMetricHeaderCandidates(managerName, metric).map(managerNameAlias);
   for (const key of Object.keys(row || {})) {
-    if (managerNameAlias(key) === target) return num(row[key]);
+    const keyAlias = managerNameAlias(key);
+    if (!keyAlias) continue;
+    if (candidates.includes(keyAlias)) return num(row[key]);
+  }
+  for (const key of Object.keys(row || {})) {
+    const keyAlias = managerNameAlias(key);
+    if (keyAlias === target) return num(row[key]);
   }
   return 0;
 }
@@ -2451,9 +2478,10 @@ function budgetRowsFiltered(){
   return managerBudgetSourceRows().filter(r => {
     if (state.filters.division !== 'All' && normalizeCostCenterName(r.CostCenter || r.Division) !== state.filters.division) return false;
     if (state.filters.manager !== 'All') {
-      const hasNamedColumn = budgetManagerColumnValue(r, state.filters.manager) > 0;
+      const hasProjectedColumn = budgetManagerMetricValue(r, state.filters.manager, 'Projected') > 0;
+      const hasStraightColumn = budgetManagerMetricValue(r, state.filters.manager, 'Straightline') > 0;
       const directMatch = managerNamesMatch(r.Manager || r.ProjectManager, state.filters.manager);
-      if (!hasNamedColumn && !directMatch) return false;
+      if (!hasProjectedColumn && !hasStraightColumn && !directMatch) return false;
     }
     if (!filterMatchProject(r.ProjectName)) return false;
     if (state.filters.search && !`${r.ProjectName} ${r.Manager || r.ProjectManager} ${r.CostCenter || r.Division}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false;
@@ -2468,11 +2496,12 @@ function monthlyProjectedBudgetFor(costCenter, manager, projectName){
     if (projectName && text(r.ProjectName) && text(r.ProjectName) !== text(projectName)) return false;
     return true;
   });
+  if (!rows.length) return 0;
   if (manager) {
-    const fromManagerColumn = rows.reduce((s,r)=>s + budgetManagerColumnValue(r, manager), 0);
-    if (fromManagerColumn) return fromManagerColumn;
+    const fromManagerColumns = rows.reduce((s,r)=>s + budgetManagerMetricValue(r, manager, 'Projected'), 0);
+    if (fromManagerColumns > 0) return fromManagerColumns;
     const directManagerTotal = rows.filter(r => managerNamesMatch(r.Manager || r.ProjectManager, manager)).reduce((s,r)=>s + num(r.ProjectedBudget || r.Budget || r.Projected || r['Projected']), 0);
-    if (directManagerTotal) return directManagerTotal;
+    if (directManagerTotal > 0) return directManagerTotal;
   }
   return rows.reduce((s,r)=>s + num(r.ProjectedBudget || r.Budget || r.Projected || r['Projected']), 0);
 }
@@ -2484,11 +2513,12 @@ function monthlyStraightlineBudgetFor(costCenter, manager, projectName){
     if (projectName && text(r.ProjectName) && text(r.ProjectName) !== text(projectName)) return false;
     return true;
   });
+  if (!rows.length) return 0;
   if (manager) {
-    const fromManagerColumn = rows.reduce((s,r)=>s + budgetManagerColumnValue(r, manager), 0);
-    if (fromManagerColumn) return fromManagerColumn;
+    const fromManagerColumns = rows.reduce((s,r)=>s + budgetManagerMetricValue(r, manager, 'Straightline'), 0);
+    if (fromManagerColumns > 0) return fromManagerColumns;
     const directManagerTotal = rows.filter(r => managerNamesMatch(r.Manager || r.ProjectManager, manager)).reduce((s,r)=>s + num(r.StraightlineBudget || r.MonthlyStraightlineBudget || r['Straightline'] || r['Straight Line']), 0);
-    if (directManagerTotal) return directManagerTotal;
+    if (directManagerTotal > 0) return directManagerTotal;
   }
   return rows.reduce((s,r)=>s + num(r.StraightlineBudget || r.MonthlyStraightlineBudget || r['Straightline'] || r['Straight Line']), 0);
 }
@@ -2519,11 +2549,11 @@ function selectedPeriodTimeLabel(period = state.filters.period){
 function filteredRevenue(){ return state.revenue.filter(r => { if (!inPeriod(r.Date, state.filters.period)) return false; if (state.filters.division !== 'All' && normalizeCostCenterName(r.CostCenter) !== state.filters.division) return false; if (state.filters.manager !== 'All' && text(r.Manager) !== state.filters.manager) return false; if (!filterMatchProject(r.ProjectName)) return false; if (state.filters.search && !`${r.ProjectName} ${r.Manager} ${r.CostCenter}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false; return true; }); }
 function filteredProjects(){ return state.projects.filter(r => { if (state.filters.division !== 'All' && normalizeCostCenterName(r.Division || r.CostCenter) !== state.filters.division) return false; if (state.filters.manager !== 'All' && text(r.Manager) !== state.filters.manager) return false; if (!filterMatchProject(r.ProjectName)) return false; if (state.filters.search && !`${r.ProjectName} ${r.Manager} ${r.Division || r.CostCenter}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false; return true; }); }
 function filteredOrders(period = state.filters.period){ return state.orders.filter(r => { const hasDate = !!normaliseDate(r.Date); if (hasDate && !inPeriod(r.Date, period)) return false; if (state.filters.division !== 'All' && normalizeCostCenterName(r.Division || r.CostCenter) !== state.filters.division) return false; if (state.filters.manager !== 'All' && text(r.Manager) !== state.filters.manager) return false; if (!filterMatchProject(r.ProjectName)) return false; if (state.filters.search && !`${r.ProjectName} ${r.Manager} ${r.Division || r.CostCenter}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false; return true; }); }
-function filteredStraightline(period = state.filters.period){ return state.straightline.filter(r => { if (state.filters.division !== 'All' && normalizeCostCenterName(r.CostCenter || r.Division) !== state.filters.division) return false; if (state.filters.manager !== 'All' && text(r.Manager) !== state.filters.manager) return false; if (!filterMatchProject(r.ProjectName)) return false; if (state.filters.search && !`${r.ProjectName} ${r.Manager} ${r.CostCenter || r.Division}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false; return true; }); }
+function filteredStraightline(period = state.filters.period){ return []; }
 function chartRevenueRows(period){ return state.revenue.filter(r => { if (!inPeriod(r.Date, period)) return false; if (state.filters.division !== 'All' && normalizeCostCenterName(r.CostCenter) !== state.filters.division) return false; if (state.filters.manager !== 'All' && text(r.Manager) !== state.filters.manager) return false; if (!filterMatchProject(r.ProjectName)) return false; if (state.filters.search && !`${r.ProjectName} ${r.Manager} ${r.CostCenter}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false; return true; }); }
 function revenueRowsForPeriod(period = state.filters.period){ return chartRevenueRows(period); }
-function revenueProjectedValue(r, period = state.filters.period){ const monthly = monthlyProjectedBudgetFor(r.CostCenter, r.Manager, r.ProjectName) || num(r.Budget || r['Monthly Projected Budget'] || r.ProjectedBudget); return scaleMonthlyBudgetForDashboard(monthly, period); }
-function revenueStraightlineValue(r, period = state.filters.period){ const monthly = monthlyStraightlineBudgetFor(r.CostCenter, r.Manager, r.ProjectName) || num(r.MonthlyStraightlineBudget || r['Monthly Straightline Budget'] || r.StraightlineBudget); return scaleMonthlyBudgetForDashboard(monthly, period); }
+function revenueProjectedValue(r, period = state.filters.period){ const monthly = monthlyProjectedBudgetFor(r.CostCenter, r.Manager, r.ProjectName); return scaleMonthlyBudgetForDashboard(monthly, period); }
+function revenueStraightlineValue(r, period = state.filters.period){ const monthly = monthlyStraightlineBudgetFor(r.CostCenter, r.Manager, r.ProjectName); return scaleMonthlyBudgetForDashboard(monthly, period); }
 function useGroupFixedBudgetOverride(){ return false; }
 function groupProjectedTarget(period){ return budgetRowsFiltered().reduce((s,r)=>s + scaleMonthlyBudgetForDashboard(num(r.ProjectedBudget || r.Budget || r.Projected || r['Projected']), period), 0); }
 function groupStraightlineTarget(period){ return budgetRowsFiltered().reduce((s,r)=>s + scaleMonthlyBudgetForDashboard(num(r.StraightlineBudget || r.MonthlyStraightlineBudget || r['Straightline'] || r['Straight Line']), period), 0); }
@@ -2579,14 +2609,12 @@ function applyRememberedRevenueBudgets(){
   const manager = $('revManager') ? $('revManager').value : '';
   const costCenter = $('revCostCenter') ? $('revCostCenter').value : '';
   const monthlyBudget = monthlyProjectedBudgetFor(costCenter, manager, project);
-  if (monthlyBudget > 0) {
-    if ($('revBudget')) $('revBudget').value = monthlyBudget;
-    if ($('revDailyBudget')) $('revDailyBudget').value = +(monthlyBudget / 20).toFixed(2);
-    return;
-  }
-  const remembered = getRememberedRevenueBudgets(project);
-  if ($('revBudget') && remembered.monthly !== '') $('revBudget').value = remembered.monthly;
-  if ($('revDailyBudget') && remembered.daily !== '') $('revDailyBudget').value = remembered.daily;
+  const monthlyStraight = monthlyStraightlineBudgetFor(costCenter, manager, project);
+  if ($('revBudget')) $('revBudget').value = monthlyBudget > 0 ? monthlyBudget : '';
+  if ($('revDailyBudget')) $('revDailyBudget').value = monthlyBudget > 0 ? +(monthlyBudget / 20).toFixed(2) : '';
+  if ($('revBudget')) $('revBudget').readOnly = true;
+  if ($('revDailyBudget')) $('revDailyBudget').readOnly = true;
+  if ($('revBudget') && monthlyBudget <= 0) log('No projected budget found from Budgets tab for selection', { costCenter, manager, project, availableBudgetRows: state.managerBudgets.length });
 }
 function populateFilters(){
   fillSelect('periodFilter', PERIODS, state.filters.period);
