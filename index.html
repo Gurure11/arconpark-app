@@ -114,6 +114,11 @@
     .approval-actions{display:flex;flex-wrap:wrap;gap:8px}
     .approval-actions button{width:auto;padding:8px 12px;border-radius:10px}
     .role-note{font-size:12px;color:var(--muted);margin-top:6px}
+    .login-overlay{overflow-y:auto}
+    .login-card{max-height:calc(100vh - 40px);overflow-y:auto;transition:max-width .25s ease,width .25s ease}
+    .login-card.expanded{width:min(760px,100%)}
+    .register-section{max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease,opacity .2s ease,margin-top .25s ease}
+    .register-section.expanded{max-height:520px;opacity:1;margin-top:10px}
 
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -121,18 +126,31 @@
 <body>
   <div id="toastWrap" class="toast-wrap"></div>
   <div id="loginOverlay" class="login-overlay">
-    <div class="login-card">
+    <div class="login-card" id="loginCard">
       <h2 class="login-title">Manager Dashboard Login</h2>
       <p class="login-sub">Login uses the <strong>Login</strong> tab in the Manager Dashboard workbook.</p>
       <div class="form-grid">
-        <div class="field span-12"><label>Username</label><input id="loginUsername" placeholder="Enter username"></div>
-        <div class="field span-12"><label>Password</label><input id="loginPassword" type="password" placeholder="Enter password"></div>
+        <div class="field span-12"><label>Login Username</label><input id="loginUsername" placeholder="Enter username"></div>
+        <div class="field span-12"><label>Login Password</label><input id="loginPassword" type="password" placeholder="Enter password"></div>
       </div>
       <div class="login-actions">
         <button id="loginBtn" type="button">Login</button>
         <button id="logoutBtn" type="button" class="secondary login-hidden">Logout</button>
       </div>
-      <div id="loginMessage" class="role-note">Please sign in to continue.</div>
+      <div id="registerSection" class="register-section">
+        <div class="role-note" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">Create a new user</div>
+        <div class="form-grid" style="margin-top:10px">
+          <div class="field span-12"><label>Full name</label><input id="registerName" placeholder="Enter full name"></div>
+          <div class="field span-12"><label>Registration Username</label><input id="registerUsername" placeholder="Create username"></div>
+          <div class="field span-12"><label>Registration Password</label><input id="registerPassword" type="password" placeholder="Create password"></div>
+          <div class="field span-12"><label>Confirm Password</label><input id="registerConfirmPassword" type="password" placeholder="Confirm password"></div>
+          <div class="field span-12"><label>Role</label><select id="registerRole"><option value="user">User</option><option value="admin manager">Admin Manager</option><option value="safety manager">Safety Manager</option></select></div>
+        </div>
+      </div>
+      <div class="login-actions">
+        <button id="registerBtn" type="button" class="secondary">Register User</button>
+      </div>
+      <div id="loginMessage" class="role-note">Please sign in to continue. Registration saves directly to the Login tab in the Manager Dashboard workbook.</div>
     </div>
   </div>
   <div class="wrap">
@@ -342,8 +360,8 @@
   </div>
 
 <script>
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzu4FrACwfoe2inHzdzYgvfwNxAD33_Q76q7CjtuLNdGQ9wIw81oBnsSTzQtr2eX5DyCQ/exec';
-const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbzu4FrACwfoe2inHzdzYgvfwNxAD33_Q76q7CjtuLNdGQ9wIw81oBnsSTzQtr2eX5DyCQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzK2cdaZIJKvnYEeG6NlAa6PX1Q4Uy83e97XDRIZO1y7KEdqt6B8crJWkLvadsKzsldLw/exec';
+const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbzK2cdaZIJKvnYEeG6NlAa6PX1Q4Uy83e97XDRIZO1y7KEdqt6B8crJWkLvadsKzsldLw/exec';
 const PERIODS = ['Daily','Weekly','Monthly','Quarterly','Yearly'];
 const EXECUTIVE_AVG_GROSS_MARGIN_PCT = 31.66;
 const EXECUTIVE_PIE_COLORS = ['#0f172a','#1d4ed8','#15803d','#b45309','#b91c1c','#7c3aed','#0891b2','#ea580c','#16a34a','#be185d'];
@@ -372,6 +390,15 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const LOGIN_TAB_SHEET_ID = '1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE';
 const USER_SESSION_KEY = 'onpoint_dashboard_logged_in_user_v1';
+function mapLoginRow(r){
+  return {
+    username:text(r.Username || r.username || r.UserName || rowVal(r,0)),
+    role:text(r.Role || r.role || rowVal(r,1)),
+    displayName:text(r.Name || r.DisplayName || r.displayName || rowVal(r,2) || r.Username || r.username || rowVal(r,0)),
+    isActive:String(r.Active ?? r.active ?? rowVal(r,3) ?? 'true').toLowerCase() !== 'false',
+    password:''
+  };
+}
 function currentUserName(){ return text(state.currentUser?.displayName || state.currentUser?.name || state.currentUser?.username); }
 function currentUserRole(){ return lower(state.currentUser?.role); }
 function isAdminManager(){ return currentUserRole()==='admin manager' || currentUserRole()==='admin_manager' || currentUserRole()==='admin'; }
@@ -392,14 +419,134 @@ function setCurrentUser(user){ state.currentUser = user || null; saveSessionUser
 function requireRole(check, message){ if (!check()) { showToast(message,'error'); alert(message); return false; } return true; }
 function composeRevenueReasonText(){ const reasons=[]; if($('revReasonRainfall')?.checked) reasons.push('Rainfall'); if($('revReasonBadWeather')?.checked) reasons.push('Bad weather'); if($('revReasonShortage')?.checked) reasons.push('Shortage of material'); if($('revReasonDelay')?.checked) reasons.push('Delay in supplies'); if($('revReasonPlanning')?.checked) reasons.push('Poor planning'); if(text($('revReasonOther')?.value)) reasons.push(text($('revReasonOther').value)); return reasons.join(', '); }
 function combinedRevenueComments(){ return [text($('revComment')?.value), text($('revManagerSafetyComment')?.value)].filter(Boolean).join(' | '); }
-async function fetchLoginUsers(){ try { return await fetchActionFirst(['getLoginUsers','getLogins','loginUsers']); } catch(e) { log('Login users fetch unavailable', e.message); return []; } }
-function mapLoginRow(r){ return { username:text(r.Username || r.username || rowVal(r,0)), password:text(r.Password || r.password || rowVal(r,1)), role:text(r.Role || r.role || rowVal(r,2)), displayName:text(r.Name || r.DisplayName || r.displayName || rowVal(r,3) || r.Username || r.username || rowVal(r,0)), isActive: text(r.Active || r.active || rowVal(r,4) || 'true') !== 'false' }; }
-async function handleLogin(){ const username=text($('loginUsername')?.value); const password=text($('loginPassword')?.value); if(!username || !password){ $('loginMessage').textContent='Enter username and password.'; return; } let matched = null; try { const rows = await fetchLoginUsers(); state.logins = Array.isArray(rows) ? rows.map(mapLoginRow) : []; matched = state.logins.find(u => lower(u.username)===lower(username) && u.password===password && u.isActive); } catch(e) { log('Login fetch error', e.message); } if (!matched) { try { const res = await postAction({ action:'loginUser', targetSpreadsheetId:LOGIN_TAB_SHEET_ID, spreadsheetId:LOGIN_TAB_SHEET_ID, workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Login', targetTab:'Login', username, password }); const user = res.user || res.data || res.row || res; if (user && text(user.role || user.Role || user.username || user.Username)) matched = mapLoginRow(user); } catch(e) { log('loginUser action unavailable', e.message); } } if (!matched) { $('loginMessage').textContent='Login failed. Please check Login tab credentials.'; showToast('Login failed','error'); return; } setCurrentUser({ username:matched.username, name:matched.displayName, displayName:matched.displayName, role:matched.role }); $('loginOverlay').classList.add('login-hidden'); $('logoutBtn').classList.remove('login-hidden'); $('loginPassword').value=''; $('loginMessage').textContent=`Logged in as ${matched.displayName} (${matched.role})`; showToast(`Welcome ${matched.displayName}`,'success'); renderAll(); }
-function logoutUser(){ setCurrentUser(null); $('loginOverlay').classList.remove('login-hidden'); $('logoutBtn').classList.add('login-hidden'); $('loginMessage').textContent='Please sign in to continue.'; renderAll(); }
-function applyRolePermissions(){ const user=currentUserName(); if($('currentUserChip')){ $('currentUserChip').textContent = state.currentUser ? `${user} | ${text(state.currentUser.role)}` : 'Not logged in'; $('currentUserChip').classList.toggle('login-hidden', !state.currentUser); } if($('revPostedByDisplay')) $('revPostedByDisplay').value = user || ''; if($('revStatusDisplay')) $('revStatusDisplay').value = 'Pending Approval'; const revDisabled = !canPostRevenue(); const projDisabled = !canPostProject(); const invDisabled = !canPostInvoice(); const payDisabled = !canPostPayment(); if($('saveRevenueBtn')) $('saveRevenueBtn').disabled = revDisabled; if($('saveProjectBtn')) $('saveProjectBtn').disabled = projDisabled; if($('saveInvoiceBtn')) $('saveInvoiceBtn').disabled = invDisabled; if($('savePaymentBtn')) $('savePaymentBtn').disabled = payDisabled; if($('revQuality')) { $('revQuality').disabled = !canSetQuality(); $('revQuality').title = canSetQuality() ? '' : 'Only safety manager can set quality'; } if($('revManagerSafetyComment')) { $('revManagerSafetyComment').disabled = !canCommentRevenue(); $('revManagerSafetyComment').title = canCommentRevenue() ? '' : 'Only admin manager and safety manager can add this comment'; } if($('projectsPanel')) $('projectsPanel').style.display = state.currentUser && !canPostProject() ? 'none' : ''; }
-async function updateRevenueApproval(entry){ if(!requireRole(canApproveRevenue,'Only admin manager can approve or warn daily revenue entries.')) return; const note = window.prompt('Add approval comment (optional)', entry.ManagerComment || entry.Comment || '') || ''; try { const res = await postAction({ action:'updateRevenueApproval', targetSpreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', spreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Daily Revenue', targetTab:'Daily Revenue', rowId: entry.RowId || entry.ID || entry.Timestamp || entry.CreatedAt || `${entry.Date}|${entry.ProjectName}|${entry.Manager}`, date: entry.Date, manager: entry.Manager, costCenter: entry.CostCenter, projectName: entry.ProjectName, approvalStatus: entry.nextStatus, managerComment: note, approvedBy: currentUserName() }); showToast(res.message || 'Revenue approval updated','success'); await loadData(); } catch(e){ showToast(`Approval update failed: ${e.message}`,'error'); } }
-async function addRevenueComment(entry){ if(!requireRole(canCommentRevenue,'Only admin manager and safety manager can comment on daily revenue entries.')) return; const roleLabel = isSafetyManager() ? 'Safety manager comment' : 'Admin manager comment'; const note = window.prompt(`Enter ${roleLabel.toLowerCase()}`, entry.ManagerComment || entry.SafetyManagerComment || entry.Comment || ''); if(note===null) return; try { const payload = { action:'updateRevenueComment', targetSpreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', spreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Daily Revenue', targetTab:'Daily Revenue', rowId: entry.RowId || entry.ID || entry.Timestamp || entry.CreatedAt || `${entry.Date}|${entry.ProjectName}|${entry.Manager}`, date: entry.Date, manager: entry.Manager, costCenter: entry.CostCenter, projectName: entry.ProjectName }; if (isSafetyManager()) payload.safetyManagerComment = note; else payload.managerComment = note; payload.commentedBy = currentUserName(); const res = await postAction(payload); showToast(res.message || 'Comment saved','success'); await loadData(); } catch(e){ showToast(`Comment save failed: ${e.message}`,'error'); } }
+async function fetchLoginUsers(){
+  const remoteRows = await fetchActionFirst(['getLoginUsers','getLogins','loginUsers']);
+  state.logins = Array.isArray(remoteRows) ? remoteRows.map(mapLoginRow) : [];
+  return state.logins;
+}
+function isRegisterSectionExpanded(){
+  return $('registerSection')?.classList.contains('expanded');
+}
+function setRegisterButtonState(){
+  const btn = $('registerBtn');
+  if (!btn) return;
+  btn.textContent = isRegisterSectionExpanded() ? 'Submit Registration' : 'Register User';
+}
+function showLoginFeedback(message, type='error', useAlert=false){
+  if ($('loginMessage')) $('loginMessage').textContent = message;
+  showToast(message, type);
+  if (useAlert) alert(message);
+}
 
+function normaliseUserFacingAuthMessage(message, fallback='Request failed.'){
+  const msg = String(message || '').trim();
+  const low = msg.toLowerCase();
+  if (!msg) return fallback;
+  if (low.includes('not registered') || low.includes('no user') || low.includes('user not found')) return 'User not registered. Please create the user first.';
+  if (low.includes('wrong password') || low.includes('invalid password') || low.includes('incorrect password') || low.includes('invalid credentials')) return 'Wrong password.';
+  if (low.includes('inactive')) return 'User inactive. Please contact administrator.';
+  if (low.includes('timeout')) return 'Synchronising timed out. Please try again.';
+  return msg;
+}
+function setButtonBusy(buttonId, busyText, isBusy){
+  const btn = $(buttonId);
+  if (!btn) return () => {};
+  const oldText = btn.dataset.originalText || btn.textContent;
+  if (!btn.dataset.originalText) btn.dataset.originalText = oldText;
+  if (isBusy) {
+    btn.textContent = busyText;
+    btn.disabled = true;
+    btn.classList.add('btn-loading');
+  } else {
+    btn.textContent = oldText;
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+  }
+  return () => {
+    btn.textContent = oldText;
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+  };
+}
+function toggleRegisterSection(forceState){
+  const section = $('registerSection');
+  const card = $('loginCard');
+  if (!section) return false;
+  const shouldExpand = typeof forceState === 'boolean' ? forceState : !section.classList.contains('expanded');
+  section.classList.toggle('expanded', shouldExpand);
+  if (card) card.classList.toggle('expanded', shouldExpand);
+  setRegisterButtonState();
+  return shouldExpand;
+}
+async function handleRegisterButton(){
+  if (!isRegisterSectionExpanded()) {
+    toggleRegisterSection(true);
+    return;
+  }
+  await registerUser();
+}
+async function registerUser(){
+  const displayName=text($('registerName')?.value);
+  const username=text($('registerUsername')?.value);
+  const password=text($('registerPassword')?.value);
+  const confirmPassword=text($('registerConfirmPassword')?.value);
+  const role=text($('registerRole')?.value || 'user');
+  if(!displayName || !username || !password || !confirmPassword){ showLoginFeedback('Complete all registration fields.', 'error', true); return; }
+  if(password !== confirmPassword){ showLoginFeedback('Passwords do not match.', 'error', true); return; }
+  if(password.length < 6){ showLoginFeedback('Password must be at least 6 characters.', 'error', true); return; }
+  const done = setButtonBusy('registerBtn', '⟳ Synchronising user...', true);
+  showLoginFeedback('Synchronising new user registration...', 'info', false);
+  let users = [];
+  try {
+    users = await fetchLoginUsers();
+    if (users.some(u => lower(u.username)===lower(username))) { showLoginFeedback('That username already exists.', 'error', true); return; }
+    const res = await postAction({ action:'registerUser', targetSpreadsheetId:LOGIN_TAB_SHEET_ID, spreadsheetId:LOGIN_TAB_SHEET_ID, workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Login', targetTab:'Login', username, password, role, name:displayName, active:true });
+    if ($('loginUsername')) $('loginUsername').value = username;
+    if ($('loginPassword')) $('loginPassword').value = '';
+    if ($('registerName')) $('registerName').value = '';
+    if ($('registerUsername')) $('registerUsername').value = '';
+    if ($('registerPassword')) $('registerPassword').value = '';
+    if ($('registerConfirmPassword')) $('registerConfirmPassword').value = '';
+    await fetchLoginUsers();
+    const okMsg = res.message || 'User created successfully. Synchronisation complete.';
+    showLoginFeedback(okMsg, 'success', false);
+    alert(okMsg);
+    toggleRegisterSection(false);
+  } catch(e) {
+    showLoginFeedback(normaliseUserFacingAuthMessage(e.message, 'Registration failed.'), 'error', true);
+  } finally {
+    done();
+    setRegisterButtonState();
+  }
+}
+async function handleLogin(){
+  const username=text($('loginUsername')?.value);
+  const password=text($('loginPassword')?.value);
+  if(!username || !password){ showLoginFeedback('Enter username and password.', 'error', true); return; }
+  const done = setButtonBusy('loginBtn', '⟳ Synchronising login...', true);
+  showLoginFeedback('Synchronising login...', 'info', false);
+  try {
+    const res = await postAction({ action:'loginUser', targetSpreadsheetId:LOGIN_TAB_SHEET_ID, spreadsheetId:LOGIN_TAB_SHEET_ID, workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Login', targetTab:'Login', username, password });
+    const user = mapLoginRow(res.user || res.data || res.row || {});
+    if (!user.username) throw new Error('User not registered. Please create the user first.');
+    setCurrentUser({ username:user.username, name:user.displayName, displayName:user.displayName, role:user.role });
+    $('loginOverlay').classList.add('login-hidden');
+    $('logoutBtn').classList.remove('login-hidden');
+    $('loginPassword').value='';
+    const okMsg = `Logged in as ${user.displayName} (${user.role})`;
+    showLoginFeedback(okMsg, 'success', false);
+    alert(okMsg);
+    await loadData();
+  } catch(e) {
+    showLoginFeedback(normaliseUserFacingAuthMessage(e.message, 'Login failed.'), 'error', true);
+  } finally {
+    done();
+  }
+}
+function logoutUser(){ setCurrentUser(null); $('loginOverlay').classList.remove('login-hidden'); $('logoutBtn').classList.add('login-hidden'); $('loginMessage').textContent='Please sign in to continue.'; renderAll(); }
+function applyRolePermissions(){ const user=currentUserName(); if($('currentUserChip')){ $('currentUserChip').textContent = state.currentUser ? `${user} | ${text(state.currentUser.role)}` : 'Not logged in'; $('currentUserChip').classList.toggle('login-hidden', !state.currentUser); } if($('revPostedByDisplay')) $('revPostedByDisplay').value = user || ''; if($('revStatusDisplay')) $('revStatusDisplay').value = 'Pending Approval'; const revDisabled = !canPostRevenue(); const projDisabled = !canPostProject(); const invDisabled = !canPostInvoice(); const payDisabled = !canPostPayment(); if($('saveRevenueBtn')) $('saveRevenueBtn').disabled = revDisabled; if($('saveProjectBtn')) $('saveProjectBtn').disabled = projDisabled; if($('saveInvoiceBtn')) $('saveInvoiceBtn').disabled = invDisabled; if($('savePaymentBtn')) $('savePaymentBtn').disabled = payDisabled; if($('revQuality')) { $('revQuality').disabled = !canSetQuality(); $('revQuality').title = canSetQuality() ? '' : 'Only safety manager can set quality'; } if($('revManagerSafetyComment')) { $('revManagerSafetyComment').disabled = !canCommentRevenue(); $('revManagerSafetyComment').title = canCommentRevenue() ? '' : 'Only admin manager and safety manager can add this comment'; } if($('projectsPanel')) $('projectsPanel').style.display = ''; }
+async function updateRevenueApproval(entry){ if(!requireRole(canApproveRevenue,'Only admin manager can approve or warn daily revenue entries.')) return; const note = window.prompt('Add approval comment (optional)', entry.ManagerComment || entry.Comment || '') || ''; try { const res = await postAction({ action:'updateRevenueApproval', targetSpreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', spreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Daily Revenue', targetTab:'Daily Revenue', rowId: entry.RowId || entry.ID || entry.Timestamp || entry.CreatedAt || `${entry.Date}|${entry.ProjectName}|${entry.Manager}`, date: entry.Date, manager: entry.Manager, costCenter: entry.CostCenter, projectName: entry.ProjectName, approvalStatus: entry.nextStatus, managerComment: note, approvedBy: currentUserName() }); showToast(res.message || 'Revenue approval updated','success'); await loadData(); } catch(e){ showToast(`Approval update failed: ${e.message}`,'error'); alert(e.message || 'Approval update failed.'); } }
+async function addRevenueComment(entry){ if(!requireRole(canCommentRevenue,'Only admin manager and safety manager can comment on daily revenue entries.')) return; const roleLabel = isSafetyManager() ? 'Safety manager comment' : 'Admin manager comment'; const note = window.prompt(`Enter ${roleLabel.toLowerCase()}`, entry.ManagerComment || entry.SafetyManagerComment || entry.Comment || ''); if(note===null) return; try { const payload = { action:'updateRevenueComment', targetSpreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', spreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE', workbookName:'Manager Dashboard', sheetName:'Manager Dashboard', tabName:'Daily Revenue', targetTab:'Daily Revenue', rowId: entry.RowId || entry.ID || entry.Timestamp || entry.CreatedAt || `${entry.Date}|${entry.ProjectName}|${entry.Manager}`, date: entry.Date, manager: entry.Manager, costCenter: entry.CostCenter, projectName: entry.ProjectName }; if (isSafetyManager()) payload.safetyManagerComment = note; else payload.managerComment = note; payload.commentedBy = currentUserName(); const res = await postAction(payload); showToast(res.message || 'Comment saved','success'); await loadData(); } catch(e){ showToast(`Comment save failed: ${e.message}`,'error'); alert(e.message || 'Comment save failed.'); } }
 function formatDisplayDate(dateValue){
   const iso = normaliseDate(dateValue);
   if (!iso) return text(dateValue) || 'No date';
@@ -1573,11 +1720,12 @@ function renderKPIs(){
   const selectedPeriodActual = revenueRows.reduce((s,r)=>s+revenueActualValue(r),0);
   const ytd = yearlyRows.reduce((s,r)=>s+revenueActualValue(r),0);
   const btye = Math.max(0, confirmed - ytd);
+  const selectedMetricLabel = selectedPeriodMetricLabel(state.filters.period) || 'MTD';
   $('headlineKpis').innerHTML = [
     ['Total Confirmed', money(confirmed), `${state.filters.period} / Manager Dashboard`],
     ['Total Forecast', money(forecast), `${state.filters.period} / Manager Dashboard`],
     ['Total Orders', money(totalOrders), `${state.filters.period} / Manager Dashboard`],
-    [selectedPeriodMetricLabel(state.filters.period), money(selectedPeriodActual), 'Manager Dashboard / Daily Revenue'],
+    [selectedMetricLabel, money(selectedPeriodActual), 'Manager Dashboard / Daily Revenue'],
     ['Group YTD', money(ytd), 'Manager Dashboard / Daily Revenue'],
     ['Group BTYD', money(btye), 'Confirmed minus YTD']
   ].map(([a,b,c])=>`<div class="kpi"><div class="label">${a}</div><div class="value">${b}</div><div class="sub">${c}</div></div>`).join('');
@@ -2018,7 +2166,7 @@ async function loadData(){
   }
 }
 function bindRevenueActionButtons(){ document.querySelectorAll('[data-revenue-action]').forEach(btn => { btn.onclick = () => { const key = btn.getAttribute('data-row-key'); const entry = state.revenue.find(r => String(r.RowId || r.CreatedAt || (r.Date+'|'+r.ProjectName+'|'+r.Manager)) === key); if (!entry) return; const action = btn.getAttribute('data-revenue-action'); if (action === 'comment') return addRevenueComment(entry); entry.nextStatus = action === 'approve' ? 'Approved' : 'Warning'; return updateRevenueApproval(entry); }; }); }
-function renderAll(){ applyRolePermissions(); renderKPIs(); renderProgressCards(); renderSummary(); renderPerformanceSection(); }
+function renderAll(){ try{ applyRolePermissions(); renderKPIs(); renderProgressCards(); renderSummary(); renderPerformanceSection(); } catch(e){ log('Render error', e.message || e); } }
 function managerDashboardRevenueMeta(manager, costCenter, projectName){
   const rows = state.revenue.filter(r => (!manager || text(r.Manager)===manager) && (!projectName || text(r.ProjectName)===projectName) && (!costCenter || normalizeCostCenterName(r.CostCenter)===normalizeCostCenterName(costCenter)));
   const confirmed = rows.reduce((s,r)=>s+num(r.Confirmed),0);
@@ -2392,7 +2540,7 @@ function wireFilters(){ $('periodFilter').onchange = e => { state.filters.period
 function monthlyStraightlineForRevenue(costCenter, manager, projectName, dateValue){ return monthlyStraightlineBudgetFor(costCenter, manager, projectName); }
 function updateDashboardClock(){ const el = $('dashboardClockTime'); if (!el) return; const now = new Date(); el.textContent = now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
 function startDashboardClock(){ updateDashboardClock(); if (window.dashboardClockTimer) clearInterval(window.dashboardClockTimer); window.dashboardClockTimer = setInterval(updateDashboardClock, 1000); }
-function init(){ restoreSessionUser(); bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; if ($('loginBtn')) $('loginBtn').onclick = handleLogin; if ($('logoutBtn')) $('logoutBtn').onclick = logoutUser; if ($('loginPassword')) $('loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); }); $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; applyRolePermissions(); loadData().then(() => { if (state.currentUser) $('loginOverlay').classList.add('login-hidden'); }); }
+function init(){ restoreSessionUser(); bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; if ($('loginBtn')) $('loginBtn').onclick = handleLogin; if ($('registerBtn')) $('registerBtn').onclick = handleRegisterButton; if ($('logoutBtn')) $('logoutBtn').onclick = logoutUser; if ($('loginPassword')) $('loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); }); if ($('loginUsername')) $('loginUsername').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); }); ['registerName','registerUsername','registerPassword','registerConfirmPassword'].forEach(id => { if ($(id)) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') registerUser(); }); }); $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; applyRolePermissions(); setRegisterButtonState(); loadData().then(() => { if (state.currentUser) $('loginOverlay').classList.add('login-hidden'); }); }
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
