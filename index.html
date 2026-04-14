@@ -20,7 +20,7 @@
       min-height:100vh;
       align-items:center;
       justify-content:center;
-      padding:24px
+      padding:16px
     }
     .card{
       width:min(560px,100%);
@@ -30,13 +30,14 @@
       box-shadow:var(--shadow);
       padding:24px
     }
-    h1{margin:0 0 6px;color:var(--primary)}
+    h1{margin:0 0 6px;color:var(--primary);font-size:32px}
     h2{margin:22px 0 8px;color:var(--primary);font-size:18px}
     .muted{color:var(--muted)}
     .field{display:grid;gap:6px;margin-top:14px}
     label{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted)}
     input,select,button{
       width:100%;
+      min-height:48px;
       padding:12px 14px;
       border:1px solid var(--line);
       border-radius:14px;
@@ -44,12 +45,15 @@
     }
     input,select{background:#fff;color:var(--text)}
     button{
-      margin-top:16px;
+      margin-top:0;
       background:linear-gradient(135deg,var(--primary) 0%,var(--primary2) 100%);
       color:#fff;
       cursor:pointer;
-      border:none
+      border:none;
+      font-weight:700;
+      touch-action:manipulation
     }
+    button:hover{opacity:.95}
     .secondary{
       background:#fff !important;
       color:var(--text) !important;
@@ -57,7 +61,12 @@
     }
     .success{background:var(--green) !important}
     .danger{background:var(--red) !important}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+      margin-top:16px
+    }
     .status{
       margin-top:14px;
       font-size:13px;
@@ -65,7 +74,13 @@
       color:var(--muted)
     }
     .divider{height:1px;background:var(--line);margin:20px 0}
-    @media (max-width:640px){.row{grid-template-columns:1fr}}
+    @media (max-width:760px){
+      body{padding:12px}
+      .card{padding:18px;border-radius:18px}
+      h1{font-size:26px}
+      .row{grid-template-columns:1fr}
+      button{min-height:50px}
+    }
   </style>
 </head>
 <body>
@@ -140,7 +155,7 @@ function setStatus(msg, isError=false){
 }
 
 function validScriptUrl(url){
-  return /^https:\\/\\/script\\.google\\.com\\/macros\\/s\\//.test(url || '');
+  return /^https:\/\/script\.google\.com\/macros\/s\//.test(url || '');
 }
 
 async function postJson(payload){
