@@ -103,17 +103,50 @@
     .subtle-title{margin:0 0 10px;font-size:13px;font-weight:700;color:#0b3b91;text-transform:uppercase;letter-spacing:.06em}
     @media (max-width:1100px){.reason-grid{grid-template-columns:1fr}}
 
+
+    .auth-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px}
+    .auth-card{width:min(460px,100%);background:#fff;border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:22px}
+    .auth-card h2{margin:0 0 8px;font-size:24px;color:#0b3b91}.auth-card p{margin:0 0 14px;color:var(--muted)}
+    .auth-grid{display:grid;gap:12px}.auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}.auth-actions button{width:auto;min-width:120px}
+    .topbar-user{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.role-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:#dbeafe;color:#0b3b91;font-size:12px;font-weight:700}
+    .hidden-by-role{display:none !important}.readonly-block{opacity:.65;pointer-events:none}
+    .approval-shell,.review-shell{margin-top:16px}.stack-actions{display:flex;gap:8px;flex-wrap:wrap}.mini-input{padding:8px 10px;border-radius:10px;border:1px solid var(--line);width:100%}
+    .login-meta{font-size:12px;color:var(--muted);margin-top:10px}.small-btn{width:auto;min-width:90px;padding:8px 12px;border-radius:10px}
+
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div id="toastWrap" class="toast-wrap"></div>
+
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <h2>Dashboard login</h2>
+      <p>Sign in with your dashboard username and password.</p>
+      <div class="auth-grid">
+        <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="Enter username"></div>
+        <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter password"></div>
+      </div>
+      <div class="auth-actions">
+        <button id="loginBtn" type="button">Login</button>
+      </div>
+      <div id="loginMessage" class="login-meta">Roles supported: Admin Manager, User, Safety Manager.</div>
+    </div>
+  </div>
+
   <div class="wrap">
     <div class="card topbar">
       <div><div class="muted">Onpoint Group</div><h1 style="margin:4px 0 0;font-size:28px">Dashboard</h1></div>
       <div id="connBadge" class="badge warn">Connecting</div>
-      <button id="testBtn" type="button">Test connection</button>
-      <button id="refreshBtn" type="button">Refresh</button>
+      <div id="currentUserBar" class="topbar-user">
+        <span id="currentUserName" class="role-pill">Not signed in</span>
+        <span id="currentUserRole" class="role-pill">Guest</span>
+      </div>
+      <div class="topbar-user">
+        <button id="testBtn" type="button">Test connection</button>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="secondary">Logout</button>
+      </div>
     </div>
 
     <div class="card hero">
@@ -250,6 +283,18 @@
           </div>
         </div>
       </div>
+
+      <div class="card approval-shell" id="approvalPanelCard">
+        <h3 style="margin-top:0">Admin approval queue</h3>
+        <div class="muted" style="margin-bottom:12px">Only Admin Manager can approve user daily revenue submissions. Approved posts become visible in Daily Revenue transactions.</div>
+        <div class="table-wrap"><table id="approvalQueueTable"></table></div>
+      </div>
+      <div class="card review-shell" id="safetyReviewCard">
+        <h3 style="margin-top:0">Safety and quality review</h3>
+        <div class="muted" style="margin-bottom:12px">Only Safety Manager can update quality and comments for each submitted user row.</div>
+        <div class="table-wrap"><table id="safetyReviewTable"></table></div>
+      </div>
+
       <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Revenue Summary</h3><div id="revenueStats" class="stats"></div></div>
       <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Daily Revenue transactions</h3><div class="table-wrap"><table id="dailyRevenueTransactionsTable"></table></div></div>
     </div>
@@ -305,14 +350,20 @@
       </div>
       <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Invoices</h3><div class="table-wrap"><table id="invoicesTable"></table></div></div>
       <div class="card" style="margin-top:16px"><h3 style="margin-top:0">Payments Transaction Journal</h3><div class="muted" style="margin-bottom:12px">All payment transactions recorded from Manager Dashboard / Payments tab.</div><div class="table-wrap"><table id="paymentsJournalTable"></table></div></div>
+
+      <div class="grid two section-gap">
+        <div class="card"><h3 style="margin-top:0">Invoices issued totals</h3><div id="invoiceTotalsStats" class="stats"></div><div class="grid two section-gap"><div class="table-wrap"><table id="invoiceTotalsCostCenterTable"></table></div><div class="table-wrap"><table id="invoiceTotalsManagerTable"></table></div></div></div>
+        <div class="card"><h3 style="margin-top:0">Payments received totals</h3><div id="paymentTotalsStats" class="stats"></div><div class="grid two section-gap"><div class="table-wrap"><table id="paymentTotalsCostCenterTable"></table></div><div class="table-wrap"><table id="paymentTotalsManagerTable"></table></div></div></div>
+      </div>
+
     </div>
 
     <div class="panel" id="diagnosticsPanel"><div class="card"><h3 style="margin-top:0">Diagnostics</h3><pre id="diagnostics"></pre></div></div>
   </div>
 
 <script>
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwPOa1_CWNvMm5Pgz60-NWoneeZkTRhInnunqVpVvuZAL_w10AKgfhcEZhMpmXlZIqIcQ/exec';
-const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbwPOa1_CWNvMm5Pgz60-NWoneeZkTRhInnunqVpVvuZAL_w10AKgfhcEZhMpmXlZIqIcQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLAC92PNNalgfpKJMET7MAmN66fcClSnohMF1TNKfpc7LT0yesRzFOWJ0i6g1Q35-r7A/exec';
+const REVENUE_SAVE_URL = 'https://script.google.com/macros/s/AKfycbwLAC92PNNalgfpKJMET7MAmN66fcClSnohMF1TNKfpc7LT0yesRzFOWJ0i6g1Q35-r7A/exec';
 const PERIODS = ['Daily','Weekly','Monthly','Quarterly','Yearly'];
 const EXECUTIVE_AVG_GROSS_MARGIN_PCT = 31.66;
 const EXECUTIVE_PIE_COLORS = ['#0f172a','#1d4ed8','#15803d','#b45309','#b91c1c','#7c3aed','#0891b2','#ea580c','#16a34a','#be185d'];
@@ -330,7 +381,12 @@ const ONPOINT_OVERRIDE_MONTHLY_PROJECTED = 34220381;
 const ONPOINT_OVERRIDE_MONTHLY_STRAIGHTLINE = 39556824;
 const GROUP_FIXED_MONTHLY_PROJECTED = 34220381;
 const GROUP_FIXED_MONTHLY_STRAIGHTLINE = 39556824;
-const state = { projects:[], revenue:[], invoices:[], payments:[], managerBudgets:[], orders:[], straightline:[], filters:{ period:'Monthly', division:'All', manager:'All', project:'All', search:'' } }; let charts = {};
+const LOGIN_SHEET_ID = '1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE';
+const LOGIN_SHEET_TAB = 'login';
+const AUTH_STORAGE_KEY = 'onpoint_dashboard_auth_v1';
+const LOCAL_APPROVALS_KEY = 'onpoint_dashboard_local_approvals_v1';
+const LOCAL_SAFETY_REVIEWS_KEY = 'onpoint_dashboard_local_safety_reviews_v1';
+const state = { projects:[], revenue:[], invoices:[], payments:[], managerBudgets:[], orders:[], straightline:[], loginUsers:[], auth:null, filters:{ period:'Monthly', division:'All', manager:'All', project:'All', search:'' } }; let charts = {};
 const $ = id => document.getElementById(id);
 const log = (...args) => { const msg = args.map(v => typeof v === 'string' ? v : JSON.stringify(v,null,2)).join(' '); $('diagnostics').textContent = `${new Date().toLocaleString()}\n${msg}\n\n` + $('diagnostics').textContent; };
 const num = v => Number(String(v ?? '').replace(/[^0-9.-]/g,'')) || 0;
@@ -1740,8 +1796,11 @@ function renderSummary(){
     ['Rows', String(revenueRows.length), 'Filtered revenue rows'],
     ['Profitability', `${profitability}%`, 'From project margin']
   ].map(([a,b,c])=>`<div class="kpi"><div class="label">${a}</div><div class="value">${b}</div><div class="sub">${c}</div></div>`).join('');
-  const dailyRows = state.revenue.slice().sort((a,b)=>(a.Date < b.Date ? 1 : -1)).slice(0,100);
-  if ($('dailyRevenueTransactionsTable')) buildTable($('dailyRevenueTransactionsTable'), [{label:'Date'},{label:'Manager'},{label:'CostCenter'},{label:'ProjectName'},{label:'Actuals',class:'right'},{label:'Budget',class:'right'},{label:'Daily Budget',class:'right'}], dailyRows.map(r => [escapeHtml(r.Date), escapeHtml(r.Manager), escapeHtml(r.CostCenter), escapeHtml(r.ProjectName), money(revenueActualValue(r)), money(revenueProjectedValue(r,'Monthly')), money(revenueProjectedValue(r,'Daily'))]));
+  const dailyRows = visibleRevenueRows().slice().sort((a,b)=>(a.Date < b.Date ? 1 : -1)).slice(0,100);
+  if ($('dailyRevenueTransactionsTable')) buildTable($('dailyRevenueTransactionsTable'), [{label:'Date'},{label:'Posted by'},{label:'Manager'},{label:'CostCenter'},{label:'ProjectName'},{label:'Actuals',class:'right'},{label:'Budget',class:'right'},{label:'Daily Budget',class:'right'},{label:'Approval'},{label:'Quality Comment'},{label:'Safety Comment'}], dailyRows.map(r => [escapeHtml(r.Date), escapeHtml(text(r.SubmittedBy || r.Manager)), escapeHtml(r.Manager), escapeHtml(r.CostCenter), escapeHtml(r.ProjectName), money(revenueActualValue(r)), money(revenueProjectedValue(r,'Monthly')), money(revenueProjectedValue(r,'Daily')), `<span class="badge ${rowApprovalStatus(r)==='Approved'?'ok':'warn'}">${escapeHtml(rowApprovalStatus(r))}</span>`, escapeHtml(rowQualityCommentValue(r)), escapeHtml(rowSafetyCommentValue(r))]));
+  renderApprovalQueue();
+  renderSafetyReviewQueue();
+  renderInvoicePaymentTotals();
   buildTable($('projectsTable'), [{label:'CreatedAt'},{label:'Division'},{label:'Manager'},{label:'ProjectName'},{label:'Status'},{label:'TotalIncome',class:'right'}], filteredProjects().slice(0,100).map(r => [escapeHtml(r.CreatedAt), escapeHtml(r.Division), escapeHtml(r.Manager), escapeHtml(r.ProjectName), escapeHtml(r.Status), money(r.TotalIncome)]));
   buildTable($('invoicesTable'), [{label:'Date'},{label:'Manager'},{label:'ProjectName'},{label:'InvoiceNumber'},{label:'Amount',class:'right'},{label:'Paid'}], filteredInvoices().slice(0,100).map(r => [escapeHtml(r.Date), escapeHtml(r.Manager), escapeHtml(r.ProjectName), escapeHtml(r.InvoiceNumber), money(r.Amount), escapeHtml(r.PaymentReceived ? 'Yes' : 'No')]));
   if ($('paymentsJournalTable')) {
@@ -1787,7 +1846,19 @@ function mapRevenueRow(r){
     PaymentsReceived: num(r['Payments Received'] || r.PaymentsReceived || r.paymentsReceived || rowVal(r,11)),
     Quality: num(r.Quality || r.quality || 80),
     Safety: num(r.Safety || r.safety || 0),
-    CreatedAt: normaliseDate(r.CreatedAt || r.createdAt || rowVal(r,0)),
+    CreatedAt: normaliseDate(r.CreatedAt || r.createdAt || rowVal(r,16) || rowVal(r,0)),
+    Timestamp: text(r.Timestamp || r.timestamp || rowVal(r,17)),
+    SubmittedBy: text(r.SubmittedBy || r.submittedBy || rowVal(r,18)),
+    SubmittedRole: roleName(r.SubmittedRole || r.submittedRole || rowVal(r,19)),
+    ReasonFlags: text(r.ReasonFlags || r.reasonFlags || rowVal(r,20)),
+    QualityComment: text(r.QualityComment || r.qualityComment || rowVal(r,21)),
+    SafetyComment: text(r.SafetyComment || r.safetyComment || rowVal(r,22)),
+    ExtraReason: text(r.ExtraReason || r.extraReason || rowVal(r,23)),
+    ApprovalStatus: text(r.ApprovalStatus || r.approvalStatus || rowVal(r,24)),
+    ApprovalBy: text(r.ApprovalBy || r.approvalBy || rowVal(r,25)),
+    ApprovalDate: text(r.ApprovalDate || r.approvalDate || rowVal(r,26)),
+    AdminComment: text(r.AdminComment || r.adminComment || rowVal(r,27)),
+    RowId: text(r.RowId || r.rowId || rowVal(r,28) || buildRevenueRowId({date:normaliseDate(r.Date || r.date || rowVal(r,0)), costCenter:normalizeCostCenterName(r.CostCenter || r.costCenter || rowVal(r,1)), manager:text(r.Manager || r.manager || rowVal(r,3)), projectName:text(r.ProjectName || r.projectName || rowVal(r,4))})),
     Margin: 0
   });
 }
@@ -1830,7 +1901,19 @@ function mapRevenueRow(r){
     PaymentsReceived: num(r['Payments Received'] || r.PaymentsReceived || r.paymentsReceived || rowVal(r,11)),
     Quality: num(r.Quality || r.quality || 80),
     Safety: num(r.Safety || r.safety || 0),
-    CreatedAt: normaliseDate(r.CreatedAt || r.createdAt || rowVal(r,0)),
+    CreatedAt: normaliseDate(r.CreatedAt || r.createdAt || rowVal(r,16) || rowVal(r,0)),
+    Timestamp: text(r.Timestamp || r.timestamp || rowVal(r,17)),
+    SubmittedBy: text(r.SubmittedBy || r.submittedBy || rowVal(r,18)),
+    SubmittedRole: roleName(r.SubmittedRole || r.submittedRole || rowVal(r,19)),
+    ReasonFlags: text(r.ReasonFlags || r.reasonFlags || rowVal(r,20)),
+    QualityComment: text(r.QualityComment || r.qualityComment || rowVal(r,21)),
+    SafetyComment: text(r.SafetyComment || r.safetyComment || rowVal(r,22)),
+    ExtraReason: text(r.ExtraReason || r.extraReason || rowVal(r,23)),
+    ApprovalStatus: text(r.ApprovalStatus || r.approvalStatus || rowVal(r,24)),
+    ApprovalBy: text(r.ApprovalBy || r.approvalBy || rowVal(r,25)),
+    ApprovalDate: text(r.ApprovalDate || r.approvalDate || rowVal(r,26)),
+    AdminComment: text(r.AdminComment || r.adminComment || rowVal(r,27)),
+    RowId: text(r.RowId || r.rowId || rowVal(r,28) || buildRevenueRowId({date:normaliseDate(r.Date || r.date || rowVal(r,0)), costCenter:normalizeCostCenterName(r.CostCenter || r.costCenter || rowVal(r,1)), manager:text(r.Manager || r.manager || rowVal(r,3)), projectName:text(r.ProjectName || r.projectName || rowVal(r,4))})),
     Margin: 0
   });
 }
@@ -1876,6 +1959,177 @@ function mapStraightlineRow(r){ return { Date: normaliseDate(r.Date || r.date ||
 function mapOrderRow(r){ return Object.assign({}, r, { Date: normaliseDate(r.Date || r.CreatedAt || rowVal(r,0)), Division: normalizeCostCenterName(r.Division || r.CostCenter || r['Cost Center'] || rowVal(r,1)), Manager: text(r.Manager || r.manager || r['Project Manager'] || rowVal(r,2)), ProjectName: text(r.ProjectName || r.projectName || r['Project Name'] || rowVal(r,3)), Status: text(r.Status || r.status || rowVal(r,4)), TotalIncome: num(r.TotalIncome || r['Total Income'] || r.Amount || r.OrderValue || r.ConfirmedValue || r.ForecastValue || rowVal(r,5)) }); }
 
 let isLoadingData = false;
+
+function roleName(value){
+  const v = lower(value);
+  if (v === 'admin manager' || v === 'admin') return 'Admin Manager';
+  if (v === 'safety manager' || v === 'safety') return 'Safety Manager';
+  return 'User';
+}
+function canPostRevenue(){ return !!state.auth && ['User','Admin Manager'].includes(roleName(state.auth.Role)); }
+function canApproveRevenue(){ return !!state.auth && roleName(state.auth.Role) === 'Admin Manager'; }
+function canReviewSafety(){ return !!state.auth && roleName(state.auth.Role) === 'Safety Manager'; }
+function canManageProjectsAndInvoices(){ return !!state.auth && roleName(state.auth.Role) === 'Admin Manager'; }
+function currentUserDisplayName(){ return text(state.auth?.FullName || state.auth?.Username || ''); }
+function currentUserRole(){ return roleName(state.auth?.Role); }
+function getLocalJson(key){ try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } }
+function setLocalJson(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+function authHeaders(){ return { submittedBy: currentUserDisplayName(), submittedRole: currentUserRole() }; }
+function rowApprovalStatus(row){
+  const local = getLocalJson(LOCAL_APPROVALS_KEY).find(x => String(x.RowId) === String(row.RowId || ''));
+  return text(local?.ApprovalStatus || row.ApprovalStatus || (currentUserRole()==='Admin Manager' ? 'Approved' : 'Pending')) || 'Pending';
+}
+function rowApprovalBy(row){ const local = getLocalJson(LOCAL_APPROVALS_KEY).find(x => String(x.RowId) === String(row.RowId || '')); return text(local?.ApprovalBy || row.ApprovalBy); }
+function rowApprovalDate(row){ const local = getLocalJson(LOCAL_APPROVALS_KEY).find(x => String(x.RowId) === String(row.RowId || '')); return text(local?.ApprovalDate || row.ApprovalDate); }
+function rowSafetyReview(row){ return getLocalJson(LOCAL_SAFETY_REVIEWS_KEY).find(x => String(x.RowId) === String(row.RowId || '')) || {}; }
+function rowQualityValue(row){ const review = rowSafetyReview(row); return num(review.Quality || row.Quality); }
+function rowQualityCommentValue(row){ const review = rowSafetyReview(row); return text(review.QualityComment || row.QualityComment); }
+function rowSafetyCommentValue(row){ const review = rowSafetyReview(row); return text(review.SafetyComment || row.SafetyComment); }
+function visibleRevenueRows(){
+  return state.revenue.filter(r => canApproveRevenue() ? true : rowApprovalStatus(r) === 'Approved');
+}
+function buildRevenueRowId(payload){ return [payload.date,payload.costCenter,payload.manager,payload.projectName,Date.now()].join('|'); }
+async function fetchLoginUsersFromSheet(){
+  const tq = encodeURIComponent('select *');
+  const url = `https://docs.google.com/spreadsheets/d/${LOGIN_SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(LOGIN_SHEET_TAB)}&tq=${tq}`;
+  const resp = await withTimeoutFetch(url, getFetchOptions('GET'), 15000);
+  const raw = await resp.text();
+  const match = raw.match(/google\.visualization\.Query\.setResponse\((.*)\);?\s*$/s);
+  if (!match) throw new Error('Unable to read login sheet');
+  const json = JSON.parse(match[1]);
+  const cols = (json.table.cols || []).map(c => text(c.label));
+  return (json.table.rows || []).map(row => {
+    const out = {};
+    cols.forEach((c, i) => { out[c] = row.c[i] ? (row.c[i].v ?? row.c[i].f ?? '') : ''; });
+    return {
+      FullName: text(out.FullName), Username: text(out.Username), Email: text(out.Email), Password: text(out.Password), Role: roleName(out.Role), Status: text(out.Status || 'Active'), CreatedAt: text(out.CreatedAt)
+    };
+  }).filter(r => r.Username && r.Password && lower(r.Status || 'active') !== 'inactive');
+}
+function restoreAuth(){
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+    if (saved && saved.Username) state.auth = saved;
+  } catch {}
+}
+function persistAuth(){ if (state.auth) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state.auth)); }
+function clearAuth(){ state.auth = null; localStorage.removeItem(AUTH_STORAGE_KEY); }
+function updateUserBar(){
+  if ($('currentUserName')) $('currentUserName').textContent = currentUserDisplayName() || 'Not signed in';
+  if ($('currentUserRole')) $('currentUserRole').textContent = state.auth ? currentUserRole() : 'Guest';
+}
+function applyRoleVisibility(){
+  const loggedIn = !!state.auth;
+  if ($('authOverlay')) $('authOverlay').style.display = loggedIn ? 'none' : 'flex';
+  const userRole = currentUserRole();
+  const revenueForm = $('saveRevenueBtn')?.closest('.card');
+  if (revenueForm) revenueForm.classList.toggle('hidden-by-role', !loggedIn || (!canPostRevenue() && !canReviewSafety()));
+  if ($('approvalPanelCard')) $('approvalPanelCard').classList.toggle('hidden-by-role', !canApproveRevenue());
+  if ($('safetyReviewCard')) $('safetyReviewCard').classList.toggle('hidden-by-role', !canReviewSafety());
+  if ($('projectsPanel')) $('projectsPanel').classList.toggle('hidden-by-role', userRole === 'User' || userRole === 'Safety Manager');
+  if ($('invoicesPanel')) $('invoicesPanel').classList.toggle('hidden-by-role', userRole === 'User' || userRole === 'Safety Manager');
+  if ($('performancePanel')) $('performancePanel').classList.remove('hidden-by-role');
+  if ($('summaryPanel')) $('summaryPanel').classList.remove('hidden-by-role');
+  if ($('saveProjectBtn')) $('saveProjectBtn').disabled = !canManageProjectsAndInvoices();
+  if ($('saveInvoiceBtn')) $('saveInvoiceBtn').disabled = !canManageProjectsAndInvoices();
+  if ($('savePaymentBtn')) $('savePaymentBtn').disabled = !canManageProjectsAndInvoices();
+  if ($('revQuality')) $('revQuality').disabled = true;
+  if ($('revSafety')) $('revSafety').disabled = true;
+  if ($('revComment')) $('revComment').placeholder = canReviewSafety() ? 'Safety/quality comment' : 'Add a comment or explain why target was not reached';
+}
+async function attemptLogin(){
+  const username = text($('loginUsername')?.value);
+  const password = text($('loginPassword')?.value);
+  const message = $('loginMessage');
+  if (!username || !password) { if (message) message.textContent = 'Enter username and password.'; return; }
+  try {
+    if (!state.loginUsers.length) state.loginUsers = await fetchLoginUsersFromSheet();
+    const match = state.loginUsers.find(u => lower(u.Username) === lower(username) && text(u.Password) === password);
+    if (!match) throw new Error('Invalid username or password');
+    state.auth = match; persistAuth(); updateUserBar(); applyRoleVisibility(); renderAll();
+    if (message) message.textContent = `Signed in as ${match.FullName} (${match.Role}).`;
+    showToast(`Welcome ${match.FullName}`,'success');
+  } catch (e) {
+    if (message) message.textContent = e.message;
+    showToast(`Login failed: ${e.message}`,'error');
+  }
+}
+function logoutUser(){ clearAuth(); updateUserBar(); applyRoleVisibility(); renderAll(); showToast('Logged out.','info'); }
+async function approveRevenueRow(rowId, approvalStatus='Approved', adminComment=''){
+  if (!canApproveRevenue()) return;
+  const entry = { RowId:String(rowId), ApprovalStatus:approvalStatus, ApprovalBy:currentUserDisplayName(), ApprovalDate:new Date().toISOString(), AdminComment:text(adminComment) };
+  const all = getLocalJson(LOCAL_APPROVALS_KEY).filter(x => String(x.RowId) !== String(rowId));
+  all.push(entry); setLocalJson(LOCAL_APPROVALS_KEY, all);
+  try { await postJsonToUrl(REVENUE_SAVE_URL, { action:'approveRevenuePost', rowId:String(rowId), approvalStatus, approvalBy:entry.ApprovalBy, approvalDate:entry.ApprovalDate, adminComment:entry.AdminComment }); } catch(e){ log('Approval stored locally only', e.message); }
+  renderAll(); showToast(`Row ${approvalStatus.toLowerCase()}.`,'success');
+}
+async function saveSafetyReviewRow(rowId, quality, qualityComment, safetyComment){
+  if (!canReviewSafety()) return;
+  const entry = { RowId:String(rowId), Quality:num(quality), QualityComment:text(qualityComment), SafetyComment:text(safetyComment), ReviewedBy:currentUserDisplayName(), ReviewedAt:new Date().toISOString() };
+  const all = getLocalJson(LOCAL_SAFETY_REVIEWS_KEY).filter(x => String(x.RowId) !== String(rowId));
+  all.push(entry); setLocalJson(LOCAL_SAFETY_REVIEWS_KEY, all);
+  try { await postJsonToUrl(REVENUE_SAVE_URL, { action:'saveSafetyReview', rowId:String(rowId), quality:entry.Quality, qualityComment:entry.QualityComment, safetyComment:entry.SafetyComment, reviewedBy:entry.ReviewedBy, reviewedAt:entry.ReviewedAt }); } catch(e){ log('Safety review stored locally only', e.message); }
+  renderAll(); showToast('Safety review saved.','success');
+}
+function invoiceTotalsBy(field){
+  const map = {}; filteredInvoices().forEach(r => { const key = text(r[field]) || 'Unassigned'; map[key] = (map[key] || 0) + num(r.Amount); });
+  return Object.entries(map).map(([key, total]) => ({ key, total })).sort((a,b)=>b.total-a.total || a.key.localeCompare(b.key));
+}
+function paymentTotalsBy(field){
+  const map = {}; filteredPayments().forEach(r => { const key = text(r[field] || (field==='ProjectManager' ? r.Manager : '')) || 'Unassigned'; map[key] = (map[key] || 0) + num(r.AmountPaid || r.Amount); });
+  return Object.entries(map).map(([key, total]) => ({ key, total })).sort((a,b)=>b.total-a.total || a.key.localeCompare(b.key));
+}
+function renderInvoicePaymentTotals(){
+  const invCc = invoiceTotalsBy('CostCenter');
+  const invPm = invoiceTotalsBy('Manager');
+  const payCc = paymentTotalsBy('CostCenter');
+  const payPm = paymentTotalsBy('ProjectManager');
+  if ($('invoiceTotalsStats')) $('invoiceTotalsStats').innerHTML = [
+    ['Invoices issued', money(invCc.reduce((s,r)=>s+r.total,0)), `${filteredInvoices().length} rows`],
+    ['Cost centers', String(invCc.length), 'Grouped total'],
+    ['Project managers', String(invPm.length), 'Grouped total'],
+    ['Selected period', state.filters.period, 'Active filters']
+  ].map(([a,b,c])=>`<div class="kpi"><div class="label">${a}</div><div class="value">${b}</div><div class="sub">${c}</div></div>`).join('');
+  if ($('paymentTotalsStats')) $('paymentTotalsStats').innerHTML = [
+    ['Payments received', money(payCc.reduce((s,r)=>s+r.total,0)), `${filteredPayments().length} rows`],
+    ['Cost centers', String(payCc.length), 'Grouped total'],
+    ['Project managers', String(payPm.length), 'Grouped total'],
+    ['Selected period', state.filters.period, 'Active filters']
+  ].map(([a,b,c])=>`<div class="kpi"><div class="label">${a}</div><div class="value">${b}</div><div class="sub">${c}</div></div>`).join('');
+  if ($('invoiceTotalsCostCenterTable')) buildTable($('invoiceTotalsCostCenterTable'), [{label:'Invoice totals by cost center'},{label:'Total',class:'right'}], invCc.map(r => [escapeHtml(r.key), money(r.total)]));
+  if ($('invoiceTotalsManagerTable')) buildTable($('invoiceTotalsManagerTable'), [{label:'Invoice totals by project manager'},{label:'Total',class:'right'}], invPm.map(r => [escapeHtml(r.key), money(r.total)]));
+  if ($('paymentTotalsCostCenterTable')) buildTable($('paymentTotalsCostCenterTable'), [{label:'Payment totals by cost center'},{label:'Total',class:'right'}], payCc.map(r => [escapeHtml(r.key), money(r.total)]));
+  if ($('paymentTotalsManagerTable')) buildTable($('paymentTotalsManagerTable'), [{label:'Payment totals by project manager'},{label:'Total',class:'right'}], payPm.map(r => [escapeHtml(r.key), money(r.total)]));
+}
+function renderApprovalQueue(){
+  if (!$('approvalQueueTable')) return;
+  const pending = state.revenue.filter(r => rowApprovalStatus(r) !== 'Approved').sort((a,b)=>String(b.Date).localeCompare(String(a.Date)));
+  buildTable($('approvalQueueTable'), [{label:'Date'},{label:'Submitted by'},{label:'Manager'},{label:'Cost Center'},{label:'Project Name'},{label:'Daily Revenue',class:'right'},{label:'Status'},{label:'Admin action'}], pending.map(r => [
+    escapeHtml(r.Date),
+    escapeHtml(text(r.SubmittedBy || r.Manager)),
+    escapeHtml(r.Manager),
+    escapeHtml(r.CostCenter),
+    escapeHtml(r.ProjectName),
+    money(revenueActualValue(r)),
+    `<span class="badge ${rowApprovalStatus(r)==='Approved' ? 'ok' : 'warn'}">${escapeHtml(rowApprovalStatus(r))}</span>`,
+    canApproveRevenue() ? `<div class="stack-actions"><button class="small-btn" onclick="approveRevenueRow('${escapeHtml(String(r.RowId || ''))}','Approved')">Approve</button><button class="small-btn secondary" onclick="approveRevenueRow('${escapeHtml(String(r.RowId || ''))}','Rejected')">Reject</button></div>` : '-'
+  ]));
+}
+function renderSafetyReviewQueue(){
+  if (!$('safetyReviewTable')) return;
+  const rows = state.revenue.slice().sort((a,b)=>String(b.Date).localeCompare(String(a.Date))).slice(0,100);
+  buildTable($('safetyReviewTable'), [{label:'Date'},{label:'Submitted by'},{label:'Project Name'},{label:'Daily Revenue',class:'right'},{label:'Quality',class:'right'},{label:'Quality Comment'},{label:'Safety Comment'},{label:'Action'}], rows.map(r => [
+    escapeHtml(r.Date),
+    escapeHtml(text(r.SubmittedBy || r.Manager)),
+    escapeHtml(r.ProjectName),
+    money(revenueActualValue(r)),
+    canReviewSafety() ? `<input id="quality_${escapeHtml(String(r.RowId || ''))}" class="mini-input" type="number" min="0" max="100" value="${escapeHtml(String(rowQualityValue(r) || 0))}">` : String(rowQualityValue(r)),
+    canReviewSafety() ? `<input id="qualityComment_${escapeHtml(String(r.RowId || ''))}" class="mini-input" value="${escapeHtml(rowQualityCommentValue(r))}">` : escapeHtml(rowQualityCommentValue(r)),
+    canReviewSafety() ? `<input id="safetyComment_${escapeHtml(String(r.RowId || ''))}" class="mini-input" value="${escapeHtml(rowSafetyCommentValue(r))}">` : escapeHtml(rowSafetyCommentValue(r)),
+    canReviewSafety() ? `<button class="small-btn" onclick="saveSafetyReviewRow('${escapeHtml(String(r.RowId || ''))}', document.getElementById('quality_${escapeHtml(String(r.RowId || ''))}').value, document.getElementById('qualityComment_${escapeHtml(String(r.RowId || ''))}').value, document.getElementById('safetyComment_${escapeHtml(String(r.RowId || ''))}').value)">Save</button>` : '-'
+  ]));
+}
+
 async function quickConnectionTest(){
   const btn=$('testBtn'); const old=btn.textContent; btn.textContent='Testing...'; btn.classList.add('btn-loading');
   try { const rows = await fetchAction('health'); setConn('Live Connected','ok'); showToast('Connection successful','success'); log('Health check OK', rows); }
@@ -1917,6 +2171,7 @@ async function loadData(){
       else { state[stateKey] = []; if (required) failures.push(`${actionLabel}: ${res.reason.message}`); }
     });
     state.managerBudgets = Array.isArray(state.managerBudgets) ? state.managerBudgets : [];
+    try { state.loginUsers = await fetchLoginUsersFromSheet(); } catch(e) { log('Login sheet load failed', e.message); }
     log('Loaded rows / failed endpoints', {
       revenue: state.revenue.length,
       straightline: state.straightline.length,
@@ -1946,7 +2201,7 @@ async function loadData(){
     testBtn.classList.remove('btn-loading'); refreshBtn.classList.remove('btn-loading');
   }
 }
-function renderAll(){ renderKPIs(); renderProgressCards(); renderSummary(); renderPerformanceSection(); }
+function renderAll(){ updateUserBar(); applyRoleVisibility(); renderKPIs(); renderProgressCards(); renderSummary(); renderPerformanceSection(); }
 function managerDashboardRevenueMeta(manager, costCenter, projectName){
   const rows = state.revenue.filter(r => (!manager || text(r.Manager)===manager) && (!projectName || text(r.ProjectName)===projectName) && (!costCenter || normalizeCostCenterName(r.CostCenter)===normalizeCostCenterName(costCenter)));
   const confirmed = rows.reduce((s,r)=>s+num(r.Confirmed),0);
@@ -1969,6 +2224,8 @@ async function postJsonToUrl(url, payload){
   return await parseJsonResponse(resp);
 }
 async function saveRevenue(){
+  if (!state.auth) return alert('Please log in first.');
+  if (!canPostRevenue() || canReviewSafety()) return alert('Your role cannot post daily revenue.');
   const date = $('revDate').value || todayISO();
   const manager = $('revManager').value;
   const costCenter = $('revCostCenter').value;
@@ -1980,9 +2237,18 @@ async function saveRevenue(){
   const dayCount = Math.max(daysInMonth(date), 1);
   const dailyStraightlineBudget = monthlyStraightlineBudget ? (monthlyStraightlineBudget / dayCount) : 0;
   const meta = managerDashboardRevenueMeta(manager, costCenter, projectName);
-
+  const reasonFlags = [
+    $('revReasonRainfall')?.checked ? 'Rainfall' : '',
+    $('revReasonBadWeather')?.checked ? 'Bad weather' : '',
+    $('revReasonShortage')?.checked ? 'Shortage of material' : '',
+    $('revReasonDelay')?.checked ? 'Delay in supplies' : '',
+    $('revReasonPlanning')?.checked ? 'Poor planning' : ''
+  ].filter(Boolean).join(', ');
+  const approvalStatus = currentUserRole() === 'Admin Manager' ? 'Approved' : 'Pending';
   const payload = {
     action:'addRevenue',
+    spreadsheetId:'1DqbP3DmLjTLWuLY6I4X_Xkpg30IkfPSqNVcbU_5WrEE',
+    sheetName:'Daily Revenue',
     date,
     costCenter,
     category:'Daily Revenue',
@@ -1996,20 +2262,39 @@ async function saveRevenue(){
     invoicesIssued: 0,
     paymentsReceived: 0,
     confirmed: meta.confirmed,
-    forecast: meta.forecast
+    forecast: meta.forecast,
+    quality: 0,
+    safety: 0,
+    createdAt: date,
+    timestamp: new Date().toISOString(),
+    submittedBy: currentUserDisplayName(),
+    submittedRole: currentUserRole(),
+    reasonFlags,
+    qualityComment: '',
+    safetyComment: text($('revComment').value),
+    extraReason: text($('revReasonOther').value),
+    approvalStatus,
+    approvalBy: approvalStatus === 'Approved' ? currentUserDisplayName() : '',
+    approvalDate: approvalStatus === 'Approved' ? new Date().toISOString() : '',
+    adminComment: '',
+    rowId: buildRevenueRowId({date, costCenter, manager, projectName})
   };
   saveRevenueBudgetsForProject(projectName, monthlyProjectedBudget, dailyProjectedBudget);
-
-  if (!payload.date || !payload.manager || !payload.costCenter || !payload.projectName || payload.dailyRevenue <= 0) {
-    return alert('Complete the revenue fields first.');
-  }
-
+  if (!payload.date || !payload.manager || !payload.costCenter || !payload.projectName || payload.dailyRevenue <= 0) return alert('Complete the revenue fields first.');
   const btn=$('saveRevenueBtn'); const old=btn.textContent;
   btn.textContent='⟳ Synchronising.'; btn.classList.add('btn-loading');
   try {
-    const res = await postJsonToUrl(REVENUE_SAVE_URL, payload);
+    let res = { message: approvalStatus === 'Approved' ? 'Daily revenue saved and approved.' : 'Daily revenue submitted for admin approval.' };
+    try { res = await postJsonToUrl(REVENUE_SAVE_URL, payload); } catch(e) { log('Revenue save remote fallback', e.message); }
+    state.revenue.unshift(mapRevenueRow(payload));
+    if (approvalStatus === 'Approved') {
+      const approvals = getLocalJson(LOCAL_APPROVALS_KEY).filter(x => String(x.RowId) !== String(payload.rowId));
+      approvals.push({ RowId:String(payload.rowId), ApprovalStatus:'Approved', ApprovalBy:currentUserDisplayName(), ApprovalDate:new Date().toISOString(), AdminComment:'' });
+      setLocalJson(LOCAL_APPROVALS_KEY, approvals);
+    }
     await loadData();
-    $('revAmount').value=''; $('revQuality').value='80'; $('revSafety').value='0';
+    $('revAmount').value=''; $('revQuality').value='80'; $('revSafety').value='0'; $('revComment').value=''; $('revReasonOther').value='';
+    ['revReasonRainfall','revReasonBadWeather','revReasonShortage','revReasonDelay','revReasonPlanning'].forEach(id => { if ($(id)) $(id).checked = false; });
     renderSummary();
     showToast(res.message || 'Daily revenue has been successfully saved to Manager Dashboard','success');
     alert(res.message || 'Daily revenue has been successfully saved to Manager Dashboard');
@@ -2306,7 +2591,7 @@ function wireFilters(){ $('periodFilter').onchange = e => { state.filters.period
 function monthlyStraightlineForRevenue(costCenter, manager, projectName, dateValue){ return monthlyStraightlineBudgetFor(costCenter, manager, projectName); }
 function updateDashboardClock(){ const el = $('dashboardClockTime'); if (!el) return; const now = new Date(); el.textContent = now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
 function startDashboardClock(){ updateDashboardClock(); if (window.dashboardClockTimer) clearInterval(window.dashboardClockTimer); window.dashboardClockTimer = setInterval(updateDashboardClock, 1000); }
-function init(){ bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; loadData(); }
+function init(){ restoreAuth(); bindTabs(); wireFilters(); wireProjectAdders(); wireExecutiveExports(); startDashboardClock(); $('testBtn').onclick = () => quickConnectionTest(); $('refreshBtn').onclick = () => loadData(); $('logoutBtn').onclick = () => logoutUser(); $('loginBtn').onclick = () => attemptLogin(); $('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); }); $('saveRevenueBtn').onclick = saveRevenue; $('saveProjectBtn').onclick = saveProject; $('saveInvoiceBtn').onclick = saveInvoice; $('savePaymentBtn').onclick = savePaymentReceived; $('revDate').value = $('projCreatedAt').value = $('invDate').value = $('payDate').value = todayISO(); $('periodFilter').innerHTML = PERIODS.map(p=>`<option ${p===state.filters.period?'selected':''}>${p}</option>`).join(''); if ($('revProjectName')) $('revProjectName').addEventListener('change', applyRememberedRevenueBudgets); if ($('revManager')) $('revManager').addEventListener('change', applyRememberedRevenueBudgets); if ($('revCostCenter')) $('revCostCenter').addEventListener('change', applyRememberedRevenueBudgets); $('diagnostics').textContent = 'Waiting for first load...'; updateUserBar(); applyRoleVisibility(); loadData(); }
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
