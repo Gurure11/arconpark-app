@@ -181,7 +181,7 @@ th { background:#eef4ff; color:var(--royal-blue-dark); }
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyFZhBP3VBjlUDwT5nsDYNLIMb9aXOTkZWg4wrYFJUccEGHthvSiDi0Svsb6Fpw6ipbUg/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwBsUKldfvMFV8mmmUP9ItZOTZowv72-caxtlXQyS_9ngaGelfYwpG1iNXqpH7capyVdw/exec";
 let currentUser = null;
 let rooms = [];
 
@@ -237,7 +237,7 @@ async function login() {
   try {
     const res = await api('login', { username, password });
     if (!res.success) {
-      msg.innerHTML = '<span class="danger-text">' + (res.message || 'Login failed.') + '</span>';
+      msg.innerHTML = '<span class="danger-text">' + (res.message || 'Login failed.') + '</span><div class="info">Check Login headers: Username, Password, Role, Full Name, Active. Active must be YES.</div>';
       return;
     }
     currentUser = res.user;
